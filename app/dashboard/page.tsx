@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -11,7 +11,7 @@ import { ListeningByDayChart } from "@/components/dashboard/ListeningByDayChart"
 import { Button } from "@/components/ui/button";
 import type { DashboardData, SyncResult, UserInsight } from "@/lib/types";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId") ?? "";
 
@@ -175,14 +175,8 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard
-              label="Total Plays"
-              value={data?.profile.totalPlays ?? 0}
-            />
-            <StatCard
-              label="Unique Tracks"
-              value={data?.profile.uniqueTracks ?? 0}
-            />
+            <StatCard label="Total Plays" value={data?.profile.totalPlays ?? 0} />
+            <StatCard label="Unique Tracks" value={data?.profile.uniqueTracks ?? 0} />
             <StatCard
               label="Repeat Score"
               value={data?.profile.repeatScore?.toFixed(2) ?? "0.00"}
@@ -220,5 +214,19 @@ export default function DashboardPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black flex items-center justify-center">
+          <div className="text-zinc-400">Loading dashboard…</div>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

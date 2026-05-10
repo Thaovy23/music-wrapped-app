@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { WrappedStory } from "@/components/wrapped/WrappedStory";
 import { Button } from "@/components/ui/button";
 import type { UserInsight } from "@/lib/types";
 
-export default function WrappedPage() {
+function WrappedContent() {
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId") ?? "";
 
@@ -21,7 +21,6 @@ export default function WrappedPage() {
       return;
     }
 
-    // Fetch latest insight via a simple server endpoint
     async function load() {
       try {
         const res = await fetch(`/api/insights/latest?userId=${userId}`);
@@ -80,7 +79,10 @@ export default function WrappedPage() {
         </div>
 
         {loading && (
-          <div className="w-full max-w-sm mx-auto rounded-3xl bg-zinc-900 border border-zinc-800 animate-pulse" style={{ minHeight: "480px" }} />
+          <div
+            className="w-full max-w-sm mx-auto rounded-3xl bg-zinc-900 border border-zinc-800 animate-pulse"
+            style={{ minHeight: "480px" }}
+          />
         )}
 
         {error && (
@@ -110,5 +112,19 @@ export default function WrappedPage() {
         {insight && <WrappedStory insight={insight} />}
       </main>
     </div>
+  );
+}
+
+export default function WrappedPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black flex items-center justify-center">
+          <div className="text-zinc-400">Loading wrapped…</div>
+        </div>
+      }
+    >
+      <WrappedContent />
+    </Suspense>
   );
 }
