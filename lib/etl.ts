@@ -6,6 +6,10 @@ import type { SpotifyRecentlyPlayedItem } from "./types";
  * them into the normalized Supabase tables in the correct order.
  *
  * Upsert order: raw → albums → tracks → artists → track_artists → listening_events
+ *
+ * Duplicate detection for listening_events uses Postgres error code 23505
+ * (unique_violation) instead of relying on HTTP status codes, which are
+ * unreliable when ignoreDuplicates:true silently swallows conflicts.
  */
 export async function ingestRecentlyPlayed(
   userId: string,
@@ -70,7 +74,7 @@ export async function ingestRecentlyPlayed(
       console.error("track upsert error:", trackError.message);
     }
 
-    // 4. Artists
+    // 4. Artists + 5. Track–Artist bridge
     for (const artist of artists) {
       const { error: artistError } = await supabaseAdmin.from("artists").upsert(
         {
@@ -86,18 +90,11 @@ export async function ingestRecentlyPlayed(
         console.error("artist upsert error:", artistError.message);
       }
 
-      // 5. Track <-> Artist bridge
       const { error: taError } = await supabaseAdmin
         .from("track_artists")
         .upsert(
-          {
-            spotify_track_id: track.id,
-            spotify_artist_id: artist.id,
-          },
-          {
-            onConflict: "spotify_track_id,spotify_artist_id",
-            ignoreDuplicates: true,
-          }
+          { spotify_track_id: track.id, spotify_artist_id: artist.id },
+          { onConflict: "spotify_track_id,spotify_artist_id", ignoreDuplicates: true }
         );
 
       if (taError) {
@@ -105,22 +102,24 @@ export async function ingestRecentlyPlayed(
       }
     }
 
-    // 6. Listening events (fact table — deduplication by unique constraint)
-    const { error: eventError, status } = await supabaseAdmin
+    // 6. Listening events — use plain INSERT so Postgres 23505 (unique_violation)
+    //    is visible as a real error code rather than being silenced by ignoreDuplicates.
+    //    This gives accurate inserted / skipped counts.
+    const { error: eventError } = await supabaseAdmin
       .from("listening_events")
-      .upsert(
-        {
-          user_id: userId,
-          spotify_track_id: track.id,
-          played_at,
-        },
-        { onConflict: "user_id,spotify_track_id,played_at", ignoreDuplicates: true }
-      );
+      .insert({
+        user_id: userId,
+        spotify_track_id: track.id,
+        played_at,
+      });
 
     if (eventError) {
-      console.error("listening_events insert error:", eventError.message);
-    } else if (status === 200) {
-      skippedDuplicates++;
+      // Postgres unique_violation — expected on repeated syncs
+      if (eventError.code === "23505") {
+        skippedDuplicates++;
+      } else {
+        console.error("listening_events insert error:", eventError.message);
+      }
     } else {
       insertedEvents++;
     }
